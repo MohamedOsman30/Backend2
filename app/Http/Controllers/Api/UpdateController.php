@@ -135,47 +135,44 @@ class UpdateController extends Controller
         return response()->json(['message' => 'Account deleted successfully'], 200);
     }
     
-    public function updateProfilePhoto(Request $request)
-    {
-        try {
-            // Validate the uploaded file
-            $validator = Validator::make($request->all(), [
-                'photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // 2MB max file size
-            ]);
-    
-            if ($validator->fails()) {
-                return response()->json(['message' => $validator->errors()->first()], 400);
-            }
-    
-            // Get authenticated user
-            $user = Auth::user();
-            if (!$user) {
-                return response()->json(['message' => 'Unauthorized'], 401);
-            }
-    
-            
-    
-            // Store the new photo
-            $file = $request->file('photo');
-            $fileName = time() . '_' . $user->id . '.' . $file->getClientOriginalExtension();
-            $filePath = 'storage/default/' . $fileName;
-    
-            // Move file to public/storage/default
-            $file->move(public_path('storage/default'), $fileName);
-    
-            // Update user profile with correct path
-            $user->photo = $filePath;
-            $user->save();
-    
-            return response()->json([
-                'message' => 'Profile photo updated successfully',
-                'photo_url' => asset($filePath), // Returns accessible URL
-                'user' => $user,
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'An error occurred: ' . $e->getMessage()], 500);
+    use Illuminate\Support\Facades\Storage;
+
+public function updateProfilePhoto(Request $request)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => $validator->errors()->first()], 400);
         }
+
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $file = $request->file('photo');
+        $fileName = time() . '_' . $user->id . '.' . $file->getClientOriginalExtension();
+        $filePath = 'default/' . $fileName;
+
+        // Store file in S3
+        Storage::disk('s3')->put('default/' . $fileName, file_get_contents($file));
+        $fileUrl = Storage::disk('s3')->url('default/' . $fileName);
+
+        $user->photo = $fileUrl;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Profile photo updated successfully',
+            'photo_url' => $fileUrl,
+            'user' => $user,
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json(['message' => 'An error occurred: ' . $e->getMessage()], 500);
     }
+}
     
     public function removeProfilePhoto(Request $request)
     {
